@@ -126,11 +126,6 @@ export async function POST(req: Request) {
     }
     aiResponse = aiResponse.trim() || "Sorry, I couldn't generate a response."
 
-    const newMessages: Message[] = [
-      ...conversationHistory,
-      { role: "assistant", content: aiResponse },
-    ]
-
     let updatedChatId = conversationId
     let chatTitle = "Untitled Chat"
 
