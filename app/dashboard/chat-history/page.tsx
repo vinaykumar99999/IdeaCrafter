@@ -62,12 +62,12 @@ export default function ChatHistoryPage() {
         .order("updated_at", { ascending: false })
       if (!error) {
         // Normalize the data to ensure consistent column names
-        const chatData = ((data as any[]) || []).map(chat => ({
-          conversation_id: chat.conversation_id || chat.id,
-          user_id: chat.user_id,
-          messages: chat.messages,
-          title: chat.title,
-          updated_at: chat.updated_at
+        const chatData = ((data as unknown[]) || []).map(chat => ({
+          conversation_id: (chat as any).conversation_id || (chat as any).id,
+          user_id: (chat as any).user_id,
+          messages: (chat as any).messages,
+          title: (chat as any).title,
+          updated_at: (chat as any).updated_at
         })) as Chat[]
         setChats(chatData)
         // Calculate total messages
