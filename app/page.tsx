@@ -1,605 +1,331 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { createBrowserClient } from "@supabase/ssr"
-import type { User } from "@supabase/supabase-js"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import {
-  UserIcon,
-  Building2,
-  MapPin,
-  Globe,
-  Linkedin,
-  Users,
-  TrendingUp,
-  Edit,
-  AlertCircle,
-  Bot,
-  Star,
-  Calendar,
-  Target,
-  Zap,
-  ArrowRight,
-  MessageSquare,
-} from "lucide-react"
+import { ArrowRight, Users, TrendingUp, Shield, Zap, Target, Bot } from "lucide-react"
 import Link from "next/link"
 
-interface Profile {
-  id: string
-  email: string
-  user_type: "entrepreneur" | "investor"
-  full_name: string | null
-  company: string | null
-  industry: string | null
-  location: string | null
-  bio: string | null
-  website: string | null
-  linkedin: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface Chat {
-   conversation_id: string
-   id?: string
-   user_id: string
-   messages: string
-   title: string | null
-   updated_at: string
-  }
-
-export default function Dashboard() {
-  const [user, setUser] = useState<User | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [profileCompletion, setProfileCompletion] = useState(0)
-  const [needsProfileCreation, setNeedsProfileCreation] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [recentChats, setRecentChats] = useState<Chat[]>([])
-  const [totalChats, setTotalChats] = useState(0)
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
-
-  useEffect(() => {
-    async function getProfile() {
-      try {
-        console.log("[v0] Getting user session...")
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-
-        if (!user) {
-          console.log("[v0] No user found, redirecting to signin")
-          window.location.href = "/auth/signin"
-          return
-        }
-
-        console.log("[v0] User found:", user.email)
-        setUser(user)
-
-        console.log("[v0] Fetching profile...")
-        const { data: profileData, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
-
-        if (error) {
-          console.log("[v0] Profile fetch error:", error.message)
-
-          if (error.message.includes("table") || error.message.includes("schema")) {
-            setError("Database setup in progress. Please refresh the page in a moment.")
-          } else if (error.code === "PGRST116") {
-            console.log("[v0] No profile found, user needs to create one")
-            setNeedsProfileCreation(true)
-          } else {
-            setError("Error loading profile. Please try again.")
-          }
-        } else {
-          console.log("[v0] Profile loaded successfully")
-          setProfile(profileData)
-          calculateProfileCompletion(profileData)
-
-          // Fetch recent chats
-          const { data: chatsData, error: chatsError } = await supabase
-            .from("chats")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("updated_at", { ascending: false })
-            .limit(3)
-
-          if (!chatsError) {
-            // Normalize the data to ensure consistent column names
-            const normalizedChats = ((chatsData as unknown[]) || []).map(chat => ({
-              conversation_id: (chat as any).conversation_id || (chat as any).id,
-              id: (chat as any).id,
-              user_id: (chat as any).user_id,
-              messages: (chat as any).messages,
-              title: (chat as any).title,
-              updated_at: (chat as any).updated_at
-            })) as Chat[]
-            setRecentChats(normalizedChats)
-          } else {
-            console.error("Error fetching recent chats:", chatsError)
-          }
-
-          // Fetch total chats count
-          const { count, error: countError } = await supabase
-            .from('chats')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-
-          if (countError) {
-            console.error("Error fetching chat count:", countError)
-          }
-          setTotalChats(count || 0)
-        }
-      } catch (error: unknown) {
-        console.error("[v0] Unexpected error:", error)
-        setError("An unexpected error occurred. Please refresh the page.")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    getProfile()
-  }, [supabase])
-
-  const createProfile = async () => {
-    if (!user) return
-
-    try {
-      console.log("[v0] Creating profile for user:", user.email)
-      const { data, error } = await supabase
-        .from("profiles")
-        .insert({
-          id: user.id,
-          email: user.email,
-          full_name: user.user_metadata?.full_name || "",
-          user_type: user.user_metadata?.user_type || "entrepreneur",
-          company: user.user_metadata?.company || "",
-          industry: user.user_metadata?.industry || "",
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error("[v0] Error creating profile:", error)
-        setError("Failed to create profile. Please try again.")
-      } else {
-        console.log("[v0] Profile created successfully")
-        setProfile(data)
-        setNeedsProfileCreation(false)
-        calculateProfileCompletion(data)
-      }
-    } catch (error) {
-      console.error("[v0] Unexpected error creating profile:", error)
-      setError("Failed to create profile. Please try again.")
-    }
-  }
-
-  const calculateProfileCompletion = (profile: Profile) => {
-    const fields = [
-      profile.full_name,
-      profile.company,
-      profile.industry,
-      profile.location,
-      profile.bio,
-      profile.website || profile.linkedin,
-    ]
-    const completedFields = fields.filter((field) => field && field.trim() !== "").length
-    const completion = Math.round((completedFields / fields.length) * 100)
-    setProfileCompletion(completion)
-  }
-
-  const getMessageCount = (messagesJson: string) => {
-    try {
-      return JSON.parse(messagesJson)?.length || 0
-    } catch {
-      return 0
-    }
-  }
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    window.location.href = "/"
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-500"></div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center">
-        <Card className="w-full max-w-md border-0 shadow-xl">
-          <CardHeader>
-            <CardTitle className="flex items-center text-red-600">
-              <AlertCircle className="h-5 w-5 mr-2" />
-              Error
-            </CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              onClick={() => window.location.reload()}
-              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600"
-            >
-              Refresh Page
-            </Button>
-            <Button variant="outline" onClick={() => (window.location.href = "/")} className="w-full">
-              Go Home
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center">
-        <Card className="w-full max-w-md border-0 shadow-xl">
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>Please sign in to access your dashboard.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link href="/auth/signin">
-              <Button className="w-full bg-gradient-to-r from-emerald-600 to-teal-600">Sign In</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (needsProfileCreation) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center">
-        <Card className="w-full max-w-md border-0 shadow-xl">
-          <CardHeader>
-            <CardTitle className="text-center">Welcome to IdeaCrafter! 🚀</CardTitle>
-            <CardDescription className="text-center">
-              Let&apos;s set up your profile to get started. This will only take a moment.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-4">
-              <p className="mb-2">
-                <strong>Email:</strong> {user.email}
-              </p>
-              {user.user_metadata?.full_name && (
-                <p className="mb-2">
-                  <strong>Name:</strong> {user.user_metadata.full_name}
-                </p>
-              )}
-              {user.user_metadata?.user_type && (
-                <p>
-                  <strong>Type:</strong> {user.user_metadata.user_type}
-                </p>
-              )}
-            </div>
-            <Button onClick={createProfile} className="w-full bg-gradient-to-r from-emerald-600 to-teal-600">
-              Create My Profile
-            </Button>
-            <Button variant="outline" asChild className="w-full bg-transparent">
-              <Link href="/dashboard/profile">Complete Profile Setup</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (!profile) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center">
-        <Card className="w-full max-w-md border-0 shadow-xl">
-          <CardHeader>
-            <CardTitle>Loading Profile...</CardTitle>
-            <CardDescription>Setting up your dashboard.</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    )
-  }
-
+export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50">
-      <header className="bg-white/80 backdrop-blur-md border-b border-emerald-100 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <Link
-                href="/"
-                className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent"
-              >
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-emerald-100 bg-white/80 backdrop-blur-md">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-2 group">
+              <div className="w-9 h-9 bg-gradient-to-tr from-primary to-accent rounded-xl flex items-center justify-center shadow-md transition-transform group-hover:scale-110">
+                <TrendingUp className="w-5 h-5 text-primary-foreground" />
+              </div>
+              <span className="text-xl font-extrabold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                 IdeaCrafter
-              </Link>
+              </span>
             </div>
-            <div className="flex items-center space-x-2">
-              <Button variant="ghost" size="sm" asChild className="hover:bg-emerald-50">
-                <Link href="/dashboard/chat-history">
-                  <Users className="h-4 w-4 mr-2" />
-                  Chat History
-                </Link>
+            <nav className="hidden md:flex items-center space-x-8">
+              <a href="#features" className="hover:text-primary transition-colors">
+                Features
+              </a>
+              <a href="#how-it-works" className="hover:text-primary transition-colors">
+                How It Works
+              </a>
+            </nav>
+            <div className="flex items-center space-x-4">
+              <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
+                <Link href="/auth/signin">Sign In</Link>
               </Button>
-              <Button variant="ghost" size="sm" asChild className="hover:bg-emerald-50">
-                <Link href="/dashboard/ai-assistant">
-                  <Bot className="h-4 w-4 mr-2" />
-                  AI Assistant
+              <Button className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg hover:from-emerald-700 hover:to-teal-700" asChild>
+                <Link href="/auth/signup">
+                  Get Started
+                  <ArrowRight className="ml-2 w-4 h-4" />
                 </Link>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSignOut}
-                className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-transparent"
-              >
-                Sign Out
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1">
-            <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-sm">
-              <CardHeader className="text-center pb-4">
-                <div className="relative">
-                  <Avatar className="h-28 w-28 mx-auto mb-4 ring-4 ring-emerald-100">
-                    <AvatarImage
-                      src={`/abstract-geometric-shapes.png?height=112&width=112&query=${profile.full_name || "professional"}`}
-                    />
-                    <AvatarFallback className="text-2xl bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-700 font-bold">
-                      {profile.full_name
-                        ?.split(" ")
-                        .map((n) => n[0])
-                        .join("") || "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-                    <Badge
-                      variant={profile.user_type === "entrepreneur" ? "default" : "secondary"}
-                      className={
-                        profile.user_type === "entrepreneur"
-                          ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white border-0"
-                          : "bg-gradient-to-r from-blue-500 to-indigo-500 text-white border-0"
-                      }
-                    >
-                      {profile.user_type === "entrepreneur" ? "Entrepreneur" : "Investor"}
-                    </Badge>
-                  </div>
-                </div>
-                <CardTitle className="text-2xl font-bold text-gray-900 mt-4">
-                  {profile.full_name || "Complete Your Profile"}
-                </CardTitle>
-                <CardDescription className="text-gray-600">
-                  {profile.company && `${profile.company} • `}
-                  {profile.industry && profile.industry.charAt(0).toUpperCase() + profile.industry.slice(1)}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-sm font-semibold text-gray-700">Profile Completion</span>
-                    <span className="text-sm font-bold text-emerald-600">{profileCompletion}%</span>
-                  </div>
-                  <Progress value={profileCompletion} className="h-3 bg-white" />
-                  {profileCompletion < 100 && (
-                    <p className="text-xs text-gray-600 mt-2 flex items-center">
-                      <Target className="h-3 w-3 mr-1" />
-                      Complete your profile to get better matches
-                    </p>
-                  )}
-                </div>
+      {/* Hero Section */}
+      <section className="relative py-24 lg:py-40 overflow-hidden">
+        {/* Animated Background */}
+        <motion.div
+          initial={{ backgroundPosition: "0% 50%" }}
+          animate={{ backgroundPosition: "100% 50%" }}
+          transition={{ duration: 20, repeat: Infinity, repeatType: "reverse" }}
+          className="absolute inset-0 -z-10 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 bg-[length:200%_200%] opacity-20"
+        />
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1 }}
+          >
+            <Badge
+              variant="secondary"
+              className="mb-6 bg-gradient-to-r from-primary/10 to-accent/10 text-primary border-none"
+            >
+              AI-Powered Chatbot
+            </Badge>
+          </motion.div>
+          <motion.h1
+  initial={{ opacity: 0, y: 40 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ duration: 1 }}
+  className="text-4xl md:text-6xl font-extrabold leading-tight tracking-tight mb-6"
+>
+  Smarter Guidance for{" "}
+  <motion.span
+    className="bg-clip-text text-transparent font-extrabold"
+    style={{
+      backgroundImage: "linear-gradient(270deg, #7928ca, #ff0080, #00f5a0, #ff8c00, #7928ca)",
+      backgroundSize: "600% 600%",
+    }}
+    animate={{ backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"] }}
+    transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+  >
+    Entrepreneurs & Investors
+  </motion.span>
+</motion.h1>
 
-                <div className="space-y-4">
-                  {profile.company && (
-                    <div className="flex items-center space-x-3 text-sm bg-gray-50 rounded-lg p-3">
-                      <Building2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
-                      <span className="font-medium text-gray-900">{profile.company}</span>
-                    </div>
-                  )}
-                  {profile.industry && (
-                    <div className="flex items-center space-x-3 text-sm bg-gray-50 rounded-lg p-3">
-                      <TrendingUp className="h-5 w-5 text-blue-600 flex-shrink-0" />
-                      <span className="capitalize font-medium text-gray-900">{profile.industry.replace("-", " ")}</span>
-                    </div>
-                  )}
-                  {profile.location && (
-                    <div className="flex items-center space-x-3 text-sm bg-gray-50 rounded-lg p-3">
-                      <MapPin className="h-5 w-5 text-purple-600 flex-shrink-0" />
-                      <span className="font-medium text-gray-900">{profile.location}</span>
-                    </div>
-                  )}
-                  {profile.website && (
-                    <div className="flex items-center space-x-3 text-sm bg-gray-50 rounded-lg p-3">
-                      <Globe className="h-5 w-5 text-green-600 flex-shrink-0" />
-                      <a
-                        href={profile.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-600 hover:text-emerald-700 font-medium hover:underline"
-                      >
-                        Website
-                      </a>
-                    </div>
-                  )}
-                  {profile.linkedin && (
-                    <div className="flex items-center space-x-3 text-sm bg-gray-50 rounded-lg p-3">
-                      <Linkedin className="h-5 w-5 text-blue-600 flex-shrink-0" />
-                      <a
-                        href={profile.linkedin}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-700 font-medium hover:underline"
-                      >
-                        LinkedIn
-                      </a>
-                    </div>
-                  )}
-                </div>
+          <motion.p
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 1 }}
+            className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed"
+          >
+            A chatbot that empowers entrepreneurs and investors with instant insights, strategic
+            guidance, and data-driven decisions — anytime, anywhere.
+          </motion.p>
+          <motion.div
+            className="flex flex-col sm:flex-row gap-4 justify-center"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.6, duration: 0.8 }}
+          >
+            <Button
+              size="lg"
+              className="px-8 text-lg font-semibold shadow-md bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+              asChild
+            >
+              <Link href="/auth/signup">
+                I&apos;m an Entrepreneur
+                <ArrowRight className="ml-2 w-5 h-5" />
+              </Link>
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="px-8 text-lg font-semibold border-2 border-primary text-primary hover:bg-primary hover:text-white"
+              asChild
+            >
+              <Link href="/auth/signup">I&apos;m an Investor</Link>
+            </Button>
+          </motion.div>
+        </div>
+      </section>
 
-                <div className="space-y-3 pt-4">
-                  <Button
-                    asChild
-                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-md"
-                  >
-                    <Link href="/dashboard/profile">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit Profile
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    asChild
-                    className="w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-transparent"
-                  >
-                    <Link href="/dashboard/profile/view">
-                      <UserIcon className="h-4 w-4 mr-2" />
-                      View Public Profile
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+      {/* Features Section */}
+      <section id="features" className="py-24 bg-gradient-to-b from-card/50 to-background">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-20">
+            <h2 className="text-3xl md:text-5xl font-extrabold mb-4 text-card-foreground">
+              Everything You Need to{" "}
+              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                Succeed
+              </span>
+            </h2>
+            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
+              Unlock tailored insights, practical advice, and resources with our intelligent chatbot.
+            </p>
           </div>
-
-          <div className="lg:col-span-2 space-y-6">
-            <Card className="border-0 shadow-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white animate-gradient-move">
-  <CardHeader>
-    <CardTitle className="text-2xl flex items-center">
-      <Zap className="h-6 w-6 mr-2" />
-      Welcome back, {profile.full_name?.split(" ")[0] || "there"}! 👋
-    </CardTitle>
-    <CardDescription className="text-emerald-100 text-lg">
-      {profile.user_type === "entrepreneur"
-        ? "Ready to review your chat history and continue your conversations?"
-        : "Review your chat history and continue your investment discussions."}
-    </CardDescription>
-  </CardHeader>
-</Card>
-
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer border-0 shadow-lg bg-white/80 backdrop-blur-sm hover:scale-[1.02]">
-                <Link href="/dashboard/chat-history">
-                  <CardHeader className="text-center">
-                    <div className="mx-auto w-16 h-16 bg-gradient-to-r from-emerald-100 to-teal-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                      <Users className="h-8 w-8 text-emerald-600" />
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-10">
+            {[
+              {
+                icon: Target,
+                title: "Smart Guidance",
+                desc: "Role-specific answers whether you’re pitching, scaling, or evaluating opportunities.",
+              },
+              {
+                icon: Bot,
+                title: "AI Assistant",
+                desc: "Instantly ask about business strategy, funding, or markets with our chatbot.",
+              },
+              {
+                icon: Shield,
+                title: "Secure Platform",
+                desc: "Enterprise-grade security keeps your conversations and data safe.",
+              },
+              {
+                icon: Users,
+                title: "Verified Knowledge",
+                desc: "Responses powered by trusted insights for accurate decision-making.",
+              },
+              {
+                icon: Zap,
+                title: "Real-time Insights",
+                desc: "Stay ahead with the latest startup and investment trends.",
+              },
+              {
+                icon: TrendingUp,
+                title: "Decision Support",
+                desc: "Simplify choices with structured, AI-powered recommendations.",
+              },
+            ].map((feature, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1, duration: 0.6 }}
+                viewport={{ once: true }}
+              >
+                <Card className="p-6 border-border bg-card/50 backdrop-blur-md shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-300">
+                  <CardHeader>
+                    <div className="w-14 h-14 mb-6 bg-gradient-to-tr from-primary/10 to-accent/10 rounded-xl flex items-center justify-center">
+                      <feature.icon className="w-7 h-7 text-primary" />
                     </div>
-                    <CardTitle className="text-xl group-hover:text-emerald-600 transition-colors">
-                      Chat History
-                    </CardTitle>
-                    <CardDescription className="text-gray-600">
-                      View and continue your previous conversations with investors or startups.
-                    </CardDescription>
-                    <div className="flex items-center justify-center mt-4 text-emerald-600 group-hover:translate-x-1 transition-transform">
-                      <span className="text-sm font-medium mr-2">Get Started</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </div>
+                    <CardTitle className="text-xl font-semibold mb-2">{feature.title}</CardTitle>
+                    <CardDescription className="text-muted-foreground">{feature.desc}</CardDescription>
                   </CardHeader>
-                </Link>
-              </Card>
-
-              <Card className="group hover:shadow-xl transition-all duration-300 cursor-pointer border-0 shadow-lg bg-white/80 backdrop-blur-sm hover:scale-[1.02]">
-                <Link href="/dashboard/ai-assistant">
-                  <CardHeader className="text-center">
-                    <div className="mx-auto w-16 h-16 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                      <Bot className="h-8 w-8 text-blue-600" />
-                    </div>
-                    <CardTitle className="text-xl group-hover:text-blue-600 transition-colors">AI Assistant</CardTitle>
-                    <CardDescription className="text-gray-600">
-                      Get personalized advice for{" "}
-                      {profile.user_type === "entrepreneur" ? "pitching and fundraising" : "investment strategies"}
-                    </CardDescription>
-                    <div className="flex items-center justify-center mt-4 text-blue-600 group-hover:translate-x-1 transition-transform">
-                      <span className="text-sm font-medium mr-2">Chat Now</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </div>
-                  </CardHeader>
-                </Link>
-              </Card>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-gradient-to-r from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <MessageSquare className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900">{totalChats}</div>
-                  <div className="text-sm text-gray-600">Total Conversations</div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-gradient-to-r from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Star className="h-6 w-6 text-purple-600" />
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900">{profileCompletion}%</div>
-                  <div className="text-sm text-gray-600">Profile Score</div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Calendar className="h-5 w-5 mr-2 text-emerald-600" />
-                  Recent Activity
-                </CardTitle>
-                <CardDescription>Stay updated with your latest interactions</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {recentChats.length > 0 ? (
-                  <div className="space-y-4">
-                    {recentChats.map((chat, index) => (
-                      <div key={chat.conversation_id || `recent-${index}`} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-gray-900 truncate">{chat.title || "Untitled Chat"}</h4>
-                          <p className="text-sm text-gray-500">
-                            {getMessageCount(chat.messages)} messages • {new Date(chat.updated_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <Button variant="outline" size="sm" asChild className="ml-4">
-                          <Link href={`/dashboard/chat-history?chat=${chat.conversation_id || chat.id}`}>View</Link>
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <div className="w-20 h-20 bg-gradient-to-r from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Users className="h-10 w-10 text-gray-400" />
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No recent activity yet</h3>
-                    <p className="text-gray-500 mb-6">Start connecting with others to see updates here.</p>
-                    <Button asChild className="bg-gradient-to-r from-emerald-600 to-teal-600">
-                      <Link href="/dashboard/ai-assistant">
-                        <Bot className="h-4 w-4 mr-2" />
-                        Start Chatting
-                      </Link>
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                </Card>
+              </motion.div>
+            ))}
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* How It Works Section */}
+      <section id="how-it-works" className="py-24">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl md:text-5xl font-extrabold mb-6">Get Started in 3 Steps</h2>
+          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-16">
+            No long forms. No waiting. Just chat, learn, and grow with AI-driven guidance.
+          </p>
+          <div className="grid md:grid-cols-3 gap-10">
+            {[
+              {
+                step: "1",
+                title: "Choose Your Role",
+                desc: "Entrepreneur or investor? Personalize the chatbot to your needs.",
+                color: "from-primary to-accent",
+              },
+              {
+                step: "2",
+                title: "Ask Your Questions",
+                desc: "Engage with the chatbot on funding, scaling, or market evaluation.",
+                color: "from-accent to-primary",
+              },
+              {
+                step: "3",
+                title: "Apply Insights",
+                desc: "Turn AI-powered guidance into smarter decisions instantly.",
+                color: "from-primary to-accent",
+              },
+            ].map((item, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.2, duration: 0.6 }}
+                viewport={{ once: true }}
+              >
+                <div className="text-center">
+                  <div
+                    className={`w-20 h-20 mb-6 rounded-full flex items-center justify-center mx-auto bg-gradient-to-r ${item.color} text-white font-bold text-3xl shadow-md`}
+                  >
+                    {item.step}
+                  </div>
+                  <h3 className="text-xl font-semibold mb-4">{item.title}</h3>
+                  <p className="text-muted-foreground">{item.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-28 bg-gradient-to-r from-primary via-accent to-primary text-center relative overflow-hidden">
+        <motion.div
+          initial={{ x: "-100%" }}
+          animate={{ x: "100%" }}
+          transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+          className="absolute top-0 left-0 w-full h-full bg-white/10"
+        />
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-4xl md:text-5xl font-extrabold text-white mb-6"
+          >
+            Start Chatting with AI Today
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.8 }}
+            viewport={{ once: true }}
+            className="text-lg md:text-xl text-white/90 max-w-2xl mx-auto mb-10"
+          >
+            IdeaCrafter is free for entrepreneurs and investors. Get instant, tailored insights.
+          </motion.p>
+          <motion.div
+            className="flex flex-col sm:flex-row gap-4 justify-center"
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.4, duration: 0.8 }}
+            viewport={{ once: true }}
+          >
+            <Button
+              size="lg"
+              variant="secondary"
+              className="px-8 text-lg font-semibold bg-white text-primary hover:bg-white/90 shadow-md"
+              asChild
+            >
+              <Link href="/auth/signup">
+                Join as Entrepreneur
+                <ArrowRight className="ml-2 w-5 h-5" />
+              </Link>
+            </Button>
+            <Button
+              size="lg"
+              className="px-8 text-lg font-semibold border-2 border-white text-white hover:bg-white hover:text-primary bg-transparent"
+              asChild
+            >
+              <Link href="/auth/signup">Join as Investor</Link>
+            </Button>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-12 bg-white/80 backdrop-blur-md border-t border-emerald-100">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row items-center justify-between">
+            <div className="flex items-center space-x-2 mb-6 md:mb-0">
+              <div className="w-9 h-9 bg-gradient-to-tr from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow">
+                <TrendingUp className="w-5 h-5 text-white" />
+              </div>
+              <span className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">IdeaCrafter</span>
+            </div>
+            <div className="flex items-center space-x-6 text-sm text-muted-foreground">
+              <a href="#" className="hover:text-foreground transition-colors">
+                Privacy Policy
+              </a>
+              <a href="#" className="hover:text-foreground transition-colors">
+                Terms of Service
+              </a>
+              <a href="#" className="hover:text-foreground transition-colors">
+                Contact
+              </a>
+            </div>
+          </div>
+          <div className="mt-8 pt-8 border-t border-border text-center text-sm text-muted-foreground">
+            © 2025 IdeaCrafter. All rights reserved. Empowering smarter entrepreneurship & investment.
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
