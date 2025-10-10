@@ -10,14 +10,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   Send,
   Bot,
   UserIcon,
-  Lightbulb,
   TrendingUp,
   Target,
   DollarSign,
@@ -28,12 +26,9 @@ import {
   Zap,
   Copy,
   Trash2,
-  Edit3,
   Download,
   Link as LinkIcon,
-  MoreHorizontal,
   Loader2,
-  X,
 } from "lucide-react"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
