@@ -53,7 +53,7 @@ export default function SignUpPage() {
         email: formData.email,
         password: formData.password,
         options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
+          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `https://idea-crafter-coral.vercel.app/dashboard`,
           data: {
             user_type: userType,
             full_name: `${formData.firstName} ${formData.lastName}`,
