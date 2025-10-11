@@ -61,6 +61,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [recentChats, setRecentChats] = useState<Chat[]>([])
   const [totalChats, setTotalChats] = useState(0)
+  const [emailConfirmed, setEmailConfirmed] = useState(false)
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -68,6 +69,35 @@ export default function Dashboard() {
   )
 
   useEffect(() => {
+    async function handleAuthCallback() {
+      // Handle email confirmation callback
+      const hashParams = new URLSearchParams(window.location.hash.substring(1))
+      const accessToken = hashParams.get('access_token')
+      const refreshToken = hashParams.get('refresh_token')
+      const type = hashParams.get('type')
+
+      if (accessToken && refreshToken && type === 'signup') {
+        console.log("[v0] Processing email confirmation...")
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        })
+
+        if (error) {
+          console.error("[v0] Error setting session:", error)
+          setError("Failed to confirm email. Please try again.")
+          return
+        }
+
+        // Clear the hash from URL
+        window.history.replaceState({}, document.title, window.location.pathname)
+
+        // Show success message
+        setError(null) // Clear any existing errors
+        setEmailConfirmed(true)
+      }
+    }
+
     async function getProfile() {
       try {
         console.log("[v0] Getting user session...")
@@ -113,13 +143,13 @@ export default function Dashboard() {
 
           if (!chatsError) {
             // Normalize the data to ensure consistent column names
-            const normalizedChats = ((chatsData as any[]) || []).map(chat => ({
-              conversation_id: chat.conversation_id || chat.id,
-              id: chat.id,
-              user_id: chat.user_id,
-              messages: chat.messages,
-              title: chat.title,
-              updated_at: chat.updated_at
+            const normalizedChats = ((chatsData as unknown[]) || []).map(chat => ({
+              conversation_id: (chat as any).conversation_id || (chat as any).id,
+              id: (chat as any).id,
+              user_id: (chat as any).user_id,
+              messages: (chat as any).messages,
+              title: (chat as any).title,
+              updated_at: (chat as any).updated_at
             })) as Chat[]
             setRecentChats(normalizedChats)
           } else {
@@ -144,6 +174,9 @@ export default function Dashboard() {
         setLoading(false)
       }
     }
+
+    // Handle auth callback first
+    handleAuthCallback()
 
     getProfile()
   }, [supabase])
@@ -350,6 +383,33 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* Email Confirmation Success Message */}
+      {emailConfirmed && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-green-800">Email confirmed successfully!</h3>
+                <p className="text-sm text-green-700">Welcome to IdeaCrafter. Your account is now active.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setEmailConfirmed(false)}
+              className="text-green-600 hover:text-green-800 p-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
